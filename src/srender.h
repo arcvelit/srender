@@ -78,7 +78,7 @@ typedef uint8_t SR_Bool;
 #define SR_GET_G(hex) (((hex) & 0x0000FF00) >>  8)
 #define SR_GET_B(hex) (((hex) & 0x00FF0000) >> 16)
 #define SR_GET_A(hex) (((hex) & 0xFF000000) >> 24)
-#define SR_RGBA(r, g, b, a) ((((r)&0xFF)<<0) | (((g)&0xFF)<<8)) | (((b)&0xFF)<<16) | (((a)&0xFF)<<24))
+#define SR_RGBA(r, g, b, a) (((((r)&0xFF)<<0) | (((g)&0xFF)<<8)) | (((b)&0xFF)<<16) | (((a)&0xFF)<<24))
 
 typedef struct {
     uint32_t* frame;
@@ -92,6 +92,7 @@ SRENDERDEF void sr_canvas_init(SR_Canvas* const canvas, uint32_t* const frame, c
 SRENDERDEF uint32_t* sr_frame_alloc(const int32_t height, const uint32_t width);
 SRENDERDEF void sr_frame_free(uint32_t* const frame);
 
+SRENDERDEF uint32_t sr_color_blend(const uint32_t src, const uint32_t dst);
 SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color);
 SRENDERDEF void sr_canvas_fill_rect(SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t w, const uint32_t h, const uint32_t color);
 
@@ -124,10 +125,34 @@ SRENDERDEF void sr_frame_free(uint32_t* const frame) {
 
 // Drawing
 
+SRENDERDEF uint32_t sr_color_blend(const uint32_t src, const uint32_t dst) {
+    const uint8_t src_r = SR_GET_R(src);
+    const uint8_t src_g = SR_GET_G(src);
+    const uint8_t src_b = SR_GET_B(src);
+    const uint8_t src_a = SR_GET_A(src);
+
+    const uint8_t dst_r = SR_GET_R(dst);
+    const uint8_t dst_g = SR_GET_G(dst);
+    const uint8_t dst_b = SR_GET_B(dst);
+    const uint8_t dst_a = SR_GET_A(dst);
+
+    const uint8_t out_a = src_a + (dst_a * (255 - src_a)) / 255;   
+    if (out_a == 0x00) {
+        return 0x00000000;
+    }
+
+    const uint8_t out_r = (src_r * src_a + (dst_r * dst_a * (255 - src_a)) / 255) / out_a;
+    const uint8_t out_g = (src_g * src_a + (dst_g * dst_a * (255 - src_a)) / 255) / out_a;
+    const uint8_t out_b = (src_b * src_a + (dst_b * dst_a * (255 - src_a)) / 255) / out_a;   
+
+    return SR_RGBA(out_r, out_g, out_b, out_a);
+}
+
 SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color) {
     for (uint32_t y = 0; y < canvas->height; y++) {
         for (uint32_t x = 0; x < canvas->width; x++) {
-            canvas->frame[y*canvas->stride + x] = color;
+            uint32_t* const dst = &canvas->frame[y*canvas->stride + x];
+            *dst = sr_color_blend(color, *dst);
         }
     }
 }
@@ -136,7 +161,8 @@ SRENDERDEF void sr_canvas_fill_rect(SR_Canvas* const canvas, const uint32_t x, c
     for (uint32_t j = 0; j < h; j++) {
         for (uint32_t i = 0; i < w; i++) {
             if (x+i < canvas->width && y+j < canvas->height) {
-                canvas->frame[(y+j)*canvas->stride + (x+i)] = color;
+                uint32_t* const dst = &canvas->frame[(y+j)*canvas->stride + (x+i)];
+                *dst = sr_color_blend(color, *dst);
             }
         }
     }
@@ -184,6 +210,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define GET_A SR_GET_A
     #define RGBA SR_RGBA
     #define canvas_init sr_canvas_init
+    #define color_blend sr_color_blend
     #define canvas_fill_uniform sr_canvas_fill_uniform
     #define canvas_fill_rect sr_canvas_fill_rect
     #define canvas_save_as_ppm sr_canvas_save_as_ppm

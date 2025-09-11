@@ -3,6 +3,9 @@
         "stdint.h": "c",
         "charconv": "c",
         "srender.h": "c",
-        "random": "c"
+        "random": "c",
+        "compare": "c",
+        "cstdint": "c",
+        "format": "c"
     }
 }
