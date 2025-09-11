@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "stdint.h": "c",
+        "charconv": "c",
+        "srender.h": "c"
+    }
+}
