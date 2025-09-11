@@ -93,6 +93,7 @@ SRENDERDEF uint32_t* sr_frame_alloc(const int32_t height, const uint32_t width);
 SRENDERDEF void sr_frame_free(uint32_t* const frame);
 
 SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color);
+SRENDERDEF void sr_canvas_fill_rect(SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t w, const uint32_t h, const uint32_t color);
 
 SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const char* const path);
 
@@ -103,17 +104,17 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
 SRENDERDEF void sr_canvas_init(
     SR_Canvas* const canvas, 
     uint32_t* const frame, 
-    const uint32_t height, 
     const uint32_t width, 
+    const uint32_t height, 
     const uint32_t stride
 ) {
     canvas->frame  = frame;
-    canvas->width  = width;
     canvas->height = height;
+    canvas->width  = width;
     canvas->stride = stride;
 }
 
-SRENDERDEF uint32_t* sr_frame_alloc(const int32_t height, const uint32_t width) {
+SRENDERDEF uint32_t* sr_frame_alloc(const int32_t width, const uint32_t height) {
     return (uint32_t*)malloc(sizeof(uint32_t)*height*width);
 }
 
@@ -127,6 +128,16 @@ SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t c
     for (uint32_t y = 0; y < canvas->height; y++) {
         for (uint32_t x = 0; x < canvas->width; x++) {
             canvas->frame[y*canvas->stride + x] = color;
+        }
+    }
+}
+
+SRENDERDEF void sr_canvas_fill_rect(SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t w, const uint32_t h, const uint32_t color) {
+    for (uint32_t j = 0; j < h; j++) {
+        for (uint32_t i = 0; i < w; i++) {
+            if (x+i < canvas->width && y+j < canvas->height) {
+                canvas->frame[(y+j)*canvas->stride + (x+i)] = color;
+            }
         }
     }
 }
@@ -174,6 +185,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define RGBA SR_RGBA
     #define canvas_init sr_canvas_init
     #define canvas_fill_uniform sr_canvas_fill_uniform
+    #define canvas_fill_rect sr_canvas_fill_rect
     #define canvas_save_as_ppm sr_canvas_save_as_ppm
     #define frame_alloc sr_frame_alloc
     #define frame_free sr_frame_free
