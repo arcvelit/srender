@@ -80,6 +80,8 @@ typedef uint8_t SR_Bool;
 #define SR_GET_A(hex) (((hex) & 0xFF000000) >> 24)
 #define SR_RGBA(r, g, b, a) (((((r)&0xFF)<<0) | (((g)&0xFF)<<8)) | (((b)&0xFF)<<16) | (((a)&0xFF)<<24))
 
+#define SR_AT_POS(canvas, x, y) ((canvas)->frame[(y)*((canvas)->stride) + (x)])
+
 typedef struct {
     uint32_t* frame;
     uint32_t width, height;
@@ -151,7 +153,7 @@ SRENDERDEF uint32_t sr_color_blend(const uint32_t src, const uint32_t dst) {
 SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color) {
     for (uint32_t y = 0; y < canvas->height; y++) {
         for (uint32_t x = 0; x < canvas->width; x++) {
-            uint32_t* const dst = &canvas->frame[y*canvas->stride + x];
+            uint32_t* const dst = &SR_AT_POS(canvas, x, y);
             *dst = sr_color_blend(color, *dst);
         }
     }
@@ -161,7 +163,7 @@ SRENDERDEF void sr_canvas_fill_rect(SR_Canvas* const canvas, const uint32_t x, c
     for (uint32_t j = 0; j < h; j++) {
         for (uint32_t i = 0; i < w; i++) {
             if (x+i < canvas->width && y+j < canvas->height) {
-                uint32_t* const dst = &canvas->frame[(y+j)*canvas->stride + (x+i)];
+                uint32_t* const dst = &SR_AT_POS(canvas, x+i, y+j);
                 *dst = sr_color_blend(color, *dst);
             }
         }
@@ -209,6 +211,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define GET_B SR_GET_B
     #define GET_A SR_GET_A
     #define RGBA SR_RGBA
+    #define AT_POS SR_AT_POS
     #define canvas_init sr_canvas_init
     #define color_blend sr_color_blend
     #define canvas_fill_uniform sr_canvas_fill_uniform
