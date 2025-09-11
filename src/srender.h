@@ -46,6 +46,7 @@
 
 #ifdef SR_DEV_MODE
     #define SR_STRIP_PREFIX
+    #define SR_IMPLEMENTATION
 #endif // SR_DEV_MODE
 
 #ifndef SRENDERDEF
@@ -62,38 +63,48 @@ typedef uint8_t SR_Bool;
 
 // Canvas
 
-// 0xAABBGGRR
-// TODO: check for endianness and layout
-typedef union {
-    uint32_t x; 
-    struct {
-        uint8_t r, g, b, a;
-    };
-} SR_Color;
+#define SR_COLOR_RED        0xFF0000FF
+#define SR_COLOR_GREEN      0xFF00FF00
+#define SR_COLOR_BLUE       0xFFFF0000
 
-static const SR_Color SR_COLOR_RED   = { 0xFF0000FF };
-static const SR_Color SR_COLOR_GREEN = { 0xFF00FF00 };
-static const SR_Color SR_COLOR_BLUE  = { 0xFFFF0000 };
+#define SR_COLOR_YELLOW     0xFF00FFFF
+#define SR_COLOR_CYAN       0xFFFFFF00
+#define SR_COLOR_MAGENTA    0xFFFF00FF
 
-static const SR_Color SR_COLOR_BLACK = { 0xFF000000 };
-static const SR_Color SR_COLOR_WHITE = { 0xFFFFFFFF };
+#define SR_COLOR_BLACK      0xFF000000
+#define SR_COLOR_WHITE      0xFFFFFFFF
 
-#define sr_color_hex_get_r(hex) (((hex) & 0x000000FF) >>  0)
-#define sr_color_hex_get_g(hex) (((hex) & 0x0000FF00) >>  8)
-#define sr_color_hex_get_b(hex) (((hex) & 0x00FF0000) >> 16)
-#define sr_color_hex_get_a(hex) (((hex) & 0xFF000000) >> 24)
+#define SR_GET_R(hex) (((hex) & 0x000000FF) >>  0)
+#define SR_GET_G(hex) (((hex) & 0x0000FF00) >>  8)
+#define SR_GET_B(hex) (((hex) & 0x00FF0000) >> 16)
+#define SR_GET_A(hex) (((hex) & 0xFF000000) >> 24)
+#define SR_RGBA(r, g, b, a) ((((r)&0xFF)<<0) | (((g)&0xFF)<<8)) | (((b)&0xFF)<<16) | (((a)&0xFF)<<24))
 
 typedef struct {
-    SR_Color* frame;
+    uint32_t* frame;
     uint32_t width, height;
     uint32_t stride;
 } SR_Canvas;
 
-SRENDERDEF void sr_init_canvas(
+// Function declarations
+SRENDERDEF void sr_canvas_init(SR_Canvas* const canvas, uint32_t* const frame, const uint32_t height, const uint32_t width, const uint32_t stride);
+
+SRENDERDEF uint32_t* sr_frame_alloc(const int32_t height, const uint32_t width);
+SRENDERDEF void sr_frame_free(uint32_t* const frame);
+
+SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color);
+
+SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const char* const path);
+
+// Implementation
+
+#ifdef SR_IMPLEMENTATION
+
+SRENDERDEF void sr_canvas_init(
     SR_Canvas* const canvas, 
-    SR_Color* const frame, 
-    const uint32_t width, 
+    uint32_t* const frame, 
     const uint32_t height, 
+    const uint32_t width, 
     const uint32_t stride
 ) {
     canvas->frame  = frame;
@@ -102,17 +113,17 @@ SRENDERDEF void sr_init_canvas(
     canvas->stride = stride;
 }
 
-SRENDERDEF SR_Color* sr_frame_alloc(const int32_t height, const uint32_t width) {
-    return (SR_Color*)malloc(sizeof(SR_Color)*height*width);
+SRENDERDEF uint32_t* sr_frame_alloc(const int32_t height, const uint32_t width) {
+    return (uint32_t*)malloc(sizeof(uint32_t)*height*width);
 }
 
-SRENDERDEF void sr_frame_free(SR_Color* const frame) {
+SRENDERDEF void sr_frame_free(uint32_t* const frame) {
     free(frame);
 }
 
 // Drawing
 
-SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const SR_Color color) {
+SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color) {
     for (uint32_t y = 0; y < canvas->height; y++) {
         for (uint32_t x = 0; x < canvas->width; x++) {
             canvas->frame[y*canvas->stride + x] = color;
@@ -131,27 +142,41 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     fprintf(f, "P6\n%d %d\n255\n", canvas->width, canvas->height);
     for (uint32_t y = 0; y < canvas->height; y++) {
         for (uint32_t x = 0; x < canvas->width; x++) {
-            const SR_Color col = canvas->frame[y*canvas->stride + x];
-            fputc(col.r, f);
-            fputc(col.g, f);
-            fputc(col.b, f);
+            const uint32_t col = canvas->frame[y*canvas->stride + x];
+            fputc(SR_GET_R(col), f);
+            fputc(SR_GET_G(col), f);
+            fputc(SR_GET_B(col), f);
         }
     }
 
     fclose(f);
     return 0;
 }
+#endif // SR_IMPLEMENTATION
 
 // Prefixes
 
 #ifdef SR_STRIP_PREFIX
-    #define Color SR_Color
+    #define Color uint32_t
     #define COLOR_RED   SR_COLOR_RED
     #define COLOR_GREEN SR_COLOR_GREEN
     #define COLOR_BLUE  SR_COLOR_BLUE
+    #define COLOR_YELLOW  SR_COLOR_YELLOW
+    #define COLOR_CYAN    SR_COLOR_CYAN
+    #define COLOR_MAGENTA SR_COLOR_MAGENTA
     #define COLOR_BLACK SR_COLOR_BLACK
     #define COLOR_WHITE SR_COLOR_WHITE
     #define Canvas SR_Canvas
+    #define GET_R SR_GET_R
+    #define GET_G SR_GET_G
+    #define GET_B SR_GET_B
+    #define GET_A SR_GET_A
+    #define RGBA SR_RGBA
+    #define canvas_init sr_canvas_init
+    #define canvas_fill_uniform sr_canvas_fill_uniform
+    #define canvas_save_as_ppm sr_canvas_save_as_ppm
+    #define frame_alloc sr_frame_alloc
+    #define frame_free sr_frame_free
     #define Frame SR_Frame
     #define Bool SR_Bool
     #define TRUE SR_TRUE
