@@ -23,17 +23,6 @@
 
 // Enormous regards to Alexey Kutepov <reximkut@gmail.com>
 // for the amazing Olive.c project that made me want to start this one.
-// The following code is heavily inspired by his work, as it can be seen
-// not just with the STRIP_PREFIX and such tricks, but with the overall 
-// structure. Though I did incorporate my own tricks, my C developement
-// style mostly comes from watching him. So thanks zozin <3.
-
-// This is an attempt at making a very simple software renderer and using 
-// my knowledge from my Computer Graphics course at Concordia University 
-// (COMP371) under the supervision of Mr Popa. 
-
-// PS: I am initially developing this while traveling Japan!
-
 
 #ifndef SRENDER_C
 #define SRENDER_C
@@ -53,7 +42,7 @@
     #define SRENDERDEF
 #endif // SRENDERDEF
 
-// Utils 
+// Miscellaneous
 
 #define UNUSED(var) (void)var
 
@@ -82,6 +71,17 @@ typedef uint8_t SR_Bool;
 
 #define SR_AT_POS(canvas, x, y) ((canvas)->frame[(y)*((canvas)->stride) + (x)])
 
+#define SR_CANVAS_PUT(canvas, x, y, color) {                                          \
+    typeof(canvas->frame[0])* const _dst = &SR_AT_POS((canvas), (x), (uint32_t)(y));  \
+    *_dst = sr_color_blend((color), *_dst);                                           \
+}
+
+#define SR_SWAP(a, b) {    \
+    typeof(a) _temp = (b); \
+    (b) = (a);             \
+    (a) = _temp;           \
+}
+
 typedef struct {
     uint32_t* frame;
     uint32_t width, height;
@@ -89,20 +89,29 @@ typedef struct {
 } SR_Canvas;
 
 // Function declarations
+SRENDERDEF uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b);
+SRENDERDEF uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b);
+
 SRENDERDEF void sr_canvas_init(SR_Canvas* const canvas, uint32_t* const frame, const uint32_t height, const uint32_t width, const uint32_t stride);
 
 SRENDERDEF uint32_t* sr_frame_alloc(const int32_t height, const uint32_t width);
 SRENDERDEF void sr_frame_free(uint32_t* const frame);
 
 SRENDERDEF uint32_t sr_color_blend(const uint32_t src, const uint32_t dst);
-SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color);
-SRENDERDEF void sr_canvas_fill_rect(SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t w, const uint32_t h, const uint32_t color);
+SRENDERDEF void sr_canvas_fill(SR_Canvas* const canvas, const uint32_t color);
+SRENDERDEF void sr_canvas_draw_rectangle(SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t w, const uint32_t h, const uint32_t color);
+SRENDERDEF void sr_canvas_draw_triangle(SR_Canvas* const canvas, const uint32_t x0, const uint32_t y0, const uint32_t x1, const uint32_t y1, const uint32_t x2, const uint32_t y2, const uint32_t color);
+SRENDERDEF void sr_canvas_outline_poly(SR_Canvas* const canvas, const uint32_t* vertices, const uint32_t count, const uint32_t color);
+SRENDERDEF void sr_canvas_draw_line(SR_Canvas* const canvas, const uint32_t x0, const uint32_t y0, const uint32_t x1, const uint32_t y1, const uint32_t color);
 
 SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const char* const path);
 
 // Implementation
 
 #ifdef SR_IMPLEMENTATION
+
+SRENDERDEF uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b) { return a > b ? a : b; }
+SRENDERDEF uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b) { return a < b ? a : b; }
 
 SRENDERDEF void sr_canvas_init(
     SR_Canvas* const canvas, 
@@ -150,7 +159,7 @@ SRENDERDEF uint32_t sr_color_blend(const uint32_t src, const uint32_t dst) {
     return SR_RGBA(out_r, out_g, out_b, out_a);
 }
 
-SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t color) {
+SRENDERDEF void sr_canvas_fill(SR_Canvas* const canvas, const uint32_t color) {
     for (uint32_t y = 0; y < canvas->height; y++) {
         for (uint32_t x = 0; x < canvas->width; x++) {
             uint32_t* const dst = &SR_AT_POS(canvas, x, y);
@@ -159,16 +168,135 @@ SRENDERDEF void sr_canvas_fill_uniform(SR_Canvas* const canvas, const uint32_t c
     }
 }
 
-SRENDERDEF void sr_canvas_fill_rect(SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t w, const uint32_t h, const uint32_t color) {
-    for (uint32_t j = 0; j < h; j++) {
-        for (uint32_t i = 0; i < w; i++) {
-            if (x+i < canvas->width && y+j < canvas->height) {
-                uint32_t* const dst = &SR_AT_POS(canvas, x+i, y+j);
-                *dst = sr_color_blend(color, *dst);
-            }
+SRENDERDEF void sr_canvas_draw_rectangle(
+    SR_Canvas* const canvas, 
+    const uint32_t x, 
+    const uint32_t y, 
+    const uint32_t w, 
+    const uint32_t h, 
+    const uint32_t color
+) {
+    const uint32_t max_w = (x + w > canvas->width ) ? (canvas->width - x) : w;
+    const uint32_t max_h = (y + h > canvas->height) ? (canvas->height - y) : h;
+    for (uint32_t j = 0; j < max_h; j++) {
+        for (uint32_t i = 0; i < max_w; i++) {
+            uint32_t* const dst = &SR_AT_POS(canvas, x+i, y+j);
+            *dst = sr_color_blend(color, *dst);
         }
     }
 }
+
+SRENDERDEF void sr_canvas_draw_triangle(
+    SR_Canvas* const canvas, 
+    const uint32_t x0, const uint32_t y0, 
+    const uint32_t x1, const uint32_t y1, 
+    const uint32_t x2, const uint32_t y2, 
+    const uint32_t color
+) {
+    sr_canvas_draw_line(canvas, x0, y0, x1, y1, color);
+    sr_canvas_draw_line(canvas, x1, y1, x2, y2, color);
+    sr_canvas_draw_line(canvas, x2, y2, x0, y0, color);
+}
+
+SRENDERDEF void sr_canvas_outline_poly(
+    SR_Canvas* const canvas, 
+    const uint32_t* vertices, 
+    const uint32_t count, 
+    const uint32_t color
+) {
+    const uint32_t* const init = vertices;
+    for (uint32_t p = 0; p < count - 1; p++) {
+        sr_canvas_draw_line(canvas, *vertices, *(vertices+1), *(vertices+2), *(vertices+3), color);
+        vertices += 2;
+    }
+    sr_canvas_draw_line(canvas, *vertices, *(vertices+1), *(init+0), *(init+1), color);
+}
+
+static inline void _sr_canvas_draw_line_bresenham_h(
+    SR_Canvas* const canvas, 
+    uint32_t x0, 
+    uint32_t y0, 
+    uint32_t x1, 
+    uint32_t y1, 
+    const uint32_t color
+) {
+    // Left to right convention
+    if (x0 > x1) {
+        SR_SWAP(x0, x1);
+        SR_SWAP(y0, y1);
+    }
+
+    const uint32_t dx = x1 - x0;
+    int32_t        dy = y1 - y0;
+
+    // Miror octants
+    const int32_t dir = dy > 0 ? 1 : -1;
+    dy *= dir;
+
+    int32_t D = 2*dy - dx;
+    for (; x0 <= x1; x0++) {
+        SR_CANVAS_PUT(canvas, x0, y0, color);
+        if (D > 0) {
+            y0 += dir;
+            D  -= 2*dx;
+        }
+        D += 2*dy;
+    }
+}
+
+static inline void _sr_canvas_draw_line_bresenham_v(
+    SR_Canvas* const canvas, 
+    uint32_t x0, 
+    uint32_t y0, 
+    uint32_t x1, 
+    uint32_t y1, 
+    const uint32_t color
+) {
+    // Bottom to top convention
+    if (y0 > y1) {
+        SR_SWAP(x0, x1);
+        SR_SWAP(y0, y1);
+    }
+
+    int32_t        dx = x1 - x0;
+    const uint32_t dy = y1 - y0;
+    
+    // Miror octants
+    const int32_t dir = dx > 0 ? 1 : -1;
+    dx *= dir;
+
+    int32_t D = 2*dx - dy;
+    for (; y0 <= y1; y0++) {
+        SR_CANVAS_PUT(canvas, x0, y0, color);
+        if (D > 0) {
+            x0 += dir;
+            D  -= 2*dy;
+        }
+        D += 2*dx;
+    }
+}
+
+SRENDERDEF void sr_canvas_draw_line(
+    SR_Canvas* const canvas, 
+    const uint32_t x0, 
+    const uint32_t y0, 
+    const uint32_t x1, 
+    const uint32_t y1, 
+    const uint32_t color
+) {
+    const uint32_t dx = (x1 > x0) ? (x1 - x0) : (x0 - x1);
+    const uint32_t dy = (y1 > y0) ? (y1 - y0) : (y0 - y1);
+
+    // Branch to variants of Bresenham algorithm on the octant category
+    if (dx > dy) {
+        _sr_canvas_draw_line_bresenham_h(canvas, x0, y0, x1, y1, color);
+    } else {
+        _sr_canvas_draw_line_bresenham_v(canvas, x0, y0, x1, y1, color);
+    }
+}
+
+
+// TODO: Fill rectangle and add points stuff and matrices and whatnot
 
 // Saving 
 
@@ -212,10 +340,16 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define GET_A SR_GET_A
     #define RGBA SR_RGBA
     #define AT_POS SR_AT_POS
+    #define CANVAS_PUT SR_CANVAS_PUT
+    #define MIN_U32 SR_MIN_U32
+    #define MAX_U32 SR_MAX_U32
     #define canvas_init sr_canvas_init
     #define color_blend sr_color_blend
-    #define canvas_fill_uniform sr_canvas_fill_uniform
-    #define canvas_fill_rect sr_canvas_fill_rect
+    #define canvas_fill sr_canvas_fill
+    #define canvas_draw_rectangle sr_canvas_draw_rectangle
+    #define canvas_draw_triangle sr_canvas_draw_triangle
+    #define canvas_outline_poly sr_canvas_outline_poly
+    #define canvas_draw_line sr_canvas_draw_line
     #define canvas_save_as_ppm sr_canvas_save_as_ppm
     #define frame_alloc sr_frame_alloc
     #define frame_free sr_frame_free
