@@ -93,6 +93,7 @@ SRENDERDEF uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b);
 SRENDERDEF uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b);
 
 SRENDERDEF void sr_canvas_init(SR_Canvas* const canvas, uint32_t* const frame, const uint32_t height, const uint32_t width, const uint32_t stride);
+SRENDERDEF SR_Canvas sr_canvas_view(const SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t height, const uint32_t width);
 
 SRENDERDEF uint32_t* sr_frame_alloc(const int32_t height, const uint32_t width);
 SRENDERDEF void sr_frame_free(uint32_t* const frame);
@@ -126,8 +127,21 @@ SRENDERDEF void sr_canvas_init(
     canvas->stride = stride;
 }
 
+SRENDERDEF SR_Canvas sr_canvas_view(
+    const SR_Canvas* const canvas, 
+    const uint32_t x, 
+    const uint32_t y, 
+    const uint32_t height, 
+    const uint32_t width
+) {
+    SR_Canvas view = {0};
+    uint32_t* const sub_frame = canvas->frame + x + y * canvas->stride;
+    sr_canvas_init(&view, sub_frame, width, height, canvas->width);
+    return view;
+}
+
 SRENDERDEF uint32_t* sr_frame_alloc(const int32_t width, const uint32_t height) {
-    return (uint32_t*)malloc(sizeof(uint32_t)*height*width);
+    return (uint32_t*)malloc(sizeof(uint32_t) * height * width);
 }
 
 SRENDERDEF void sr_frame_free(uint32_t* const frame) {
@@ -344,6 +358,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define MIN_U32 SR_MIN_U32
     #define MAX_U32 SR_MAX_U32
     #define canvas_init sr_canvas_init
+    #define canvas_view sr_canvas_view
     #define color_blend sr_color_blend
     #define canvas_fill sr_canvas_fill
     #define canvas_draw_rectangle sr_canvas_draw_rectangle
