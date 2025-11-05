@@ -44,7 +44,7 @@
 
 // Miscellaneous
 
-#define UNUSED(var) (void)var
+#define SR_UNUSED(var) (void)var
 
 typedef uint8_t SR_Bool;
 #define SR_TRUE  1
@@ -218,6 +218,7 @@ SRENDERDEF void sr_canvas_outline_poly(
     const uint32_t count, 
     const uint32_t color
 ) {
+    // Takes array of contiguous points { x0, y0, x1, y1, etc... }
     const uint32_t* const init = vertices;
     for (uint32_t p = 0; p < count - 1; p++) {
         sr_canvas_draw_line(canvas, *vertices, *(vertices+1), *(vertices+2), *(vertices+3), color);
@@ -368,7 +369,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define canvas_save_as_ppm sr_canvas_save_as_ppm
     #define frame_alloc sr_frame_alloc
     #define frame_free sr_frame_free
-    #define Frame SR_Frame
+    #define UNUSED SR_UNUSED
     #define Bool SR_Bool
     #define TRUE SR_TRUE
     #define FALSE SR_FALSE
