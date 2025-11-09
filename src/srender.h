@@ -30,12 +30,15 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+#include <assert.h>
 
 // User defined macros
 
 #ifdef SR_DEV_MODE
     #define SR_STRIP_PREFIX
     #define SR_IMPLEMENTATION
+    #define SR_ASSERT_MAT_MULT
 #endif // SR_DEV_MODE
 
 #ifndef SRENDERDEF
@@ -51,6 +54,8 @@ typedef uint8_t SR_Bool;
 #define SR_FALSE 0
 
 // Canvas
+
+typedef uint32_t SR_Color;
 
 #define SR_COLOR_RED        0xFF0000FF
 #define SR_COLOR_GREEN      0xFF00FF00
@@ -80,6 +85,13 @@ typedef uint8_t SR_Bool;
     typeof(a) _temp = (b); \
     (b) = (a);             \
     (a) = _temp;           \
+}
+
+#define SR_MEMORY_GUARD(ptr) while (0) {         \
+    if (!(ptr)) {                                \
+        fprintf(stderr, "fatal: out of memory"); \
+        exit(EXIT_FAILURE);                      \
+    }                                            \
 }
 
 typedef struct {
@@ -310,8 +322,81 @@ SRENDERDEF void sr_canvas_draw_line(
     }
 }
 
+/**
+ * todo
+ * > graphics pipeline
+ *    a. ebo, vbo
+ *    b. camera
+ */
 
-// TODO: Fill rectangle and add points stuff and matrices and whatnot
+#define _SR_MATRIX_ARENA_INITIAL_CAP 4096
+
+struct {
+    float* data;
+    float* top;
+    size_t cap;
+} _SR_Matrix_Arena = {0};
+
+typedef struct {
+    float*  data;
+    uint32_t rows;
+    uint32_t cols;
+} SR_Mat;
+
+#define SR_MAT_INDEX(mat, i, j) ((mat)->data[(i)*(mat)->cols+(j)])
+#define SR_VEC_INDEX(mat, j)    SR_MAT_INDEX(mat, 0, j);
+
+#define SR_Vec SR_Mat
+
+void _SR_Arena_Init() __attribute__((constructor));
+void _SR_Arena_Init() {
+    _SR_Matrix_Arena.data = malloc(_SR_MATRIX_ARENA_INITIAL_CAP * sizeof(float));
+    _SR_Matrix_Arena.top  = _SR_Matrix_Arena.data;
+    _SR_Matrix_Arena.cap  = _SR_MATRIX_ARENA_INITIAL_CAP;
+}
+
+SRENDERDEF void sr_matrix_alloc(SR_Mat* const mat, const uint32_t rows, const uint32_t cols) {
+    const size_t required  = rows * cols;
+
+    if (_SR_Matrix_Arena.top  + required > _SR_Matrix_Arena.data + _SR_Matrix_Arena.cap) {
+        const size_t new_cap = _SR_Matrix_Arena.cap * 2;
+        float* const new_strip = malloc(new_cap * sizeof(float));
+        SR_MEMORY_GUARD(new_strip);
+
+        memcpy(new_strip, _SR_Matrix_Arena.data, _SR_Matrix_Arena.cap * sizeof(float));
+        free(_SR_Matrix_Arena.data);
+
+        _SR_Matrix_Arena.data = new_strip;
+        _SR_Matrix_Arena.top  = new_strip + _SR_Matrix_Arena.cap;
+        _SR_Matrix_Arena.cap  = new_cap;
+    }
+
+    mat->data = _SR_Matrix_Arena.top;
+    mat->cols = cols;
+    mat->rows = rows;
+
+    _SR_Matrix_Arena.top += required;
+}
+
+static inline void sr_vector_alloc(SR_Mat* const mat, const uint32_t cols) {
+    sr_matrix_alloc(mat, 1, cols);
+}
+
+SRENDERDEF void sr_matrix_mult(SR_Mat* const src, const SR_Mat* const mat1, const SR_Mat* const mat2) {
+    #ifdef SR_ASSERT_MAT_MULT
+    assert(mat1->cols == mat2->rows && "matrix size mismatch");
+    #endif
+    sr_matrix_alloc(src, mat1->rows, mat2->cols);
+    for (uint32_t i = 0; i < mat1->rows; i++) {
+        for (uint32_t j = 0; j < mat2->cols; j++) {
+            float acc = 0;
+            for (uint32_t k = 0; k < mat2->rows; k++) {
+                acc += SR_MAT_INDEX(mat1, i, k) * SR_MAT_INDEX(mat2, k, j);
+            }
+            SR_MAT_INDEX(src, i, j) = acc;
+        }
+    }
+}
 
 // Saving 
 
@@ -339,7 +424,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
 // Prefixes
 
 #ifdef SR_STRIP_PREFIX
-    #define Color uint32_t
+    #define Color SR_Color
     #define COLOR_RED   SR_COLOR_RED
     #define COLOR_GREEN SR_COLOR_GREEN
     #define COLOR_BLUE  SR_COLOR_BLUE
@@ -356,6 +441,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define RGBA SR_RGBA
     #define AT_POS SR_AT_POS
     #define CANVAS_PUT SR_CANVAS_PUT
+    #define MEMORY_GUARD SR_MEMORY_GUARD
     #define MIN_U32 SR_MIN_U32
     #define MAX_U32 SR_MAX_U32
     #define canvas_init sr_canvas_init
@@ -369,6 +455,13 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define canvas_save_as_ppm sr_canvas_save_as_ppm
     #define frame_alloc sr_frame_alloc
     #define frame_free sr_frame_free
+    #define Mat SR_Mat
+    #define Vec SR_Vec
+    #define matrix_alloc sr_matrix_alloc
+    #define vector_alloc sr_vector_alloc
+    #define matrix_mult sr_matrix_mult
+    #define MAT_INDEX SR_MAT_INDEX
+    #define VEC_INDEX SR_VEC_INDEX
     #define UNUSED SR_UNUSED
     #define Bool SR_Bool
     #define TRUE SR_TRUE
