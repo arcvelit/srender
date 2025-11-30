@@ -35,10 +35,6 @@ int main(void) {
      *  matrix_alloc(&result, 2, 1); 
      *  matrix_mult(&result, &A, &B);
      *  ...
-     *  // You can reset the arena cursor 
-     *  sr_matrix_arena_reset();
-     *  // careful, this erases all previous allocs too, see memory management demos
-     *
      */
 
     canvas_save_as_ppm(&canvas, "out.ppm");

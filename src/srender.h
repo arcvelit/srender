@@ -47,7 +47,7 @@
 
 // Miscellaneous
 
-#define SR_UNUSED(var) (void)var
+#define SR_UN_used(var) (void)var
 
 typedef uint8_t SR_Bool;
 #define SR_TRUE  1
@@ -107,6 +107,8 @@ typedef struct {
 } SR_Mat;
 
 #define SR_Vec SR_Mat
+
+#define SR_MAT_INDEX(mat, i, j) ((mat)->data[(i)*(mat)->cols+(j)])
 
 // Function declarations
 static inline uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b);
@@ -357,41 +359,68 @@ struct {
     size_t cap;
 } _SR_Matrix_Arena = {0};
 
-#define SR_MAT_INDEX(mat, i, j) ((mat)->data[(i)*(mat)->cols+(j)])
-#define SR_VEC_INDEX(mat, j)    SR_MAT_INDEX(mat, 0, j);
+#define SR_ARENA_DEFINITION(_T, _cap, _s_name, _m_init, _m_alloc, _m_reset, _allocator)   \
+    typedef struct {                                                \
+        _T*    data;                                                \
+        _T*    cursor;                                              \
+        size_t capacity;                                            \
+    } _s_name;                                                      \
+\
+    static inline void _m_init(_s_name* const arena) {              \
+        arena->data     = (_T*) _allocator(_cap * sizeof(_T));      \
+        arena->cursor   = arena->data;                              \
+        arena->capacity = _cap;                                     \
+    }                                                               \
+\
+static inline _T* _m_alloc(_s_name* const arena, size_t count) {    \
+    const size_t _used = (size_t)(arena->cursor - arena->data);     \
+    const size_t _needed = _used + count;                           \
+                                                                    \
+    if (_needed > arena->capacity) {                                \
+        size_t new_cap = arena->capacity * 2;                       \
+        while (new_cap < _needed)                                   \
+            new_cap *= 2;                                           \
+                                                                    \
+        _T* new_data = (_T*) _allocator(new_cap * sizeof(_T));      \
+        if (!new_data) {                                            \
+            fprintf(stderr, "fatal: out of memory");                \
+            exit(EXIT_FAILURE);                                     \
+        }                                                           \
+        memcpy(new_data, arena->data, _used * sizeof(_T));          \
+        free(arena->data);                                          \
+                                                                    \
+        arena->data     = new_data;                                 \
+        arena->cursor   = new_data + _used;                         \
+        arena->capacity = new_cap;                                  \
+    }                                                               \
+                                                                    \
+    _T* ptr = arena->cursor;                                        \
+    arena->cursor += count;                                         \
+    return ptr;                                                     \
+}                                                                   \
+\
+    static inline void _m_reset(_s_name* const arena) { \
+        arena->cursor = arena->data;                    \
+    }
+// SR_DEFINE_ARENA
+
+SR_ARENA_DEFINITION(float, 4096, SR_Matrix_Arena, SR_Global_Arena_Init, SR_Global_Arena_alloc, SR_Global_Arena_reset, malloc)
+SR_Matrix_Arena _SR_Global_Matrix_Arena = {0};
 
 void _SR_Arena_Init() __attribute__((constructor));
 void _SR_Arena_Init() {
-    _SR_Matrix_Arena.data = malloc(_SR_MATRIX_ARENA_INITIAL_CAP * sizeof(float));
-    _SR_Matrix_Arena.top  = _SR_Matrix_Arena.data;
-    _SR_Matrix_Arena.cap  = _SR_MATRIX_ARENA_INITIAL_CAP;
+    SR_Global_Arena_Init(&_SR_Global_Matrix_Arena);
 }
 
 SRENDERDEF void sr_matrix_alloc(SR_Mat* const mat, const uint32_t rows, const uint32_t cols) {
     const size_t required  = rows * cols;
-
-    if (_SR_Matrix_Arena.top  + required > _SR_Matrix_Arena.data + _SR_Matrix_Arena.cap) {
-        const size_t new_cap = _SR_Matrix_Arena.cap * 2;
-        float* const new_strip = malloc(new_cap * sizeof(float));
-        SR_MEMORY_GUARD(new_strip);
-
-        memcpy(new_strip, _SR_Matrix_Arena.data, _SR_Matrix_Arena.cap * sizeof(float));
-        free(_SR_Matrix_Arena.data);
-
-        _SR_Matrix_Arena.data = new_strip;
-        _SR_Matrix_Arena.top  = new_strip + _SR_Matrix_Arena.cap;
-        _SR_Matrix_Arena.cap  = new_cap;
-    }
-
-    mat->data = _SR_Matrix_Arena.top;
+    mat->data = SR_Global_Arena_alloc(&_SR_Global_Matrix_Arena, required);
     mat->cols = cols;
     mat->rows = rows;
-
-    _SR_Matrix_Arena.top += required;
 }
 
 SRENDERDEF void sr_matrix_arena_reset() {
-    _SR_Matrix_Arena.top  = _SR_Matrix_Arena.data;
+    SR_Global_Arena_reset(&_SR_Global_Matrix_Arena);
 }
 
 SRENDERDEF SR_Mat sr_matrix_make(float* const data, const uint32_t rows, const uint32_t cols) {
@@ -401,7 +430,6 @@ SRENDERDEF SR_Mat sr_matrix_make(float* const data, const uint32_t rows, const u
         .cols = cols
     };
 }
-
 
 SRENDERDEF void sr_matrix_copy(SR_Mat* const dst, const SR_Mat* const src) {
     sr_matrix_alloc(dst, src->rows, src->cols);
@@ -488,8 +516,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define matrix_mult sr_matrix_mult
     #define matrix_copy sr_matrix_copy
     #define MAT_INDEX SR_MAT_INDEX
-    #define VEC_INDEX SR_VEC_INDEX
-    #define UNUSED SR_UNUSED
+    #define UN_used SR_UN_used
     #define Bool SR_Bool
     #define TRUE SR_TRUE
     #define FALSE SR_FALSE
