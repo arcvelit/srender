@@ -9,7 +9,7 @@
 int main(void) {
     
     Canvas canvas = {0};
-    uint32_t* frame = frame_alloc(FRAME_WIDTH, FRAME_HEIGHT);
+    uint32_t* const frame = frame_alloc(FRAME_WIDTH, FRAME_HEIGHT);
     canvas_init(&canvas, frame, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH);
 
     canvas_fill(&canvas, COLOR_BLUE);
@@ -22,7 +22,7 @@ int main(void) {
     };
     canvas_outline_poly(&canvas, quad, 4, COLOR_BLACK);
 
-    // Making a view to draw with new coordinate system
+    // Creates a non-owning canvas to draw on
     Canvas view = canvas_view(&canvas, 0, canvas.height/2, canvas.height/2, canvas.width/2);
     canvas_fill(&view, COLOR_GREEN);
     const uint32_t tri[] = {

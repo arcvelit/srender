@@ -100,10 +100,19 @@ typedef struct {
     uint32_t stride;
 } SR_Canvas;
 
-// Function declarations
-SRENDERDEF uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b);
-SRENDERDEF uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b);
+typedef struct {
+    float*   data;
+    uint32_t rows;
+    uint32_t cols;
+} SR_Mat;
 
+#define SR_Vec SR_Mat
+
+// Function declarations
+static inline uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b);
+static inline uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b);
+
+// Canvas
 SRENDERDEF void sr_canvas_init(SR_Canvas* const canvas, uint32_t* const frame, const uint32_t height, const uint32_t width, const uint32_t stride);
 SRENDERDEF SR_Canvas sr_canvas_view(const SR_Canvas* const canvas, const uint32_t x, const uint32_t y, const uint32_t height, const uint32_t width);
 
@@ -117,14 +126,29 @@ SRENDERDEF void sr_canvas_draw_triangle(SR_Canvas* const canvas, const uint32_t 
 SRENDERDEF void sr_canvas_outline_poly(SR_Canvas* const canvas, const uint32_t* vertices, const uint32_t count, const uint32_t color);
 SRENDERDEF void sr_canvas_draw_line(SR_Canvas* const canvas, const uint32_t x0, const uint32_t y0, const uint32_t x1, const uint32_t y1, const uint32_t color);
 
+// Linear algebra
+SRENDERDEF void sr_matrix_alloc(SR_Mat* mat, uint32_t rows, uint32_t cols);
+SRENDERDEF SR_Mat sr_matrix_make(float* const data, const uint32_t rows, const uint32_t cols);
+SRENDERDEF void sr_matrix_copy(SR_Mat* dst, const SR_Mat* src);
+SRENDERDEF void sr_matrix_arena_reset(void);
+
+/* todo: see if adding vector directives can make it more intuitive
+ *  #define sr_vector_alloc(mat, cols)  sr_matrix_alloc(mat, 1, cols)
+ *  #define sr_vector_make(data, cols)  sr_matrix_make(data, 1, cols)
+ *  #define sr_vector_copy              sr_matrix_copy 
+ */
+
+SRENDERDEF void sr_matrix_mult(SR_Mat* src, const SR_Mat* mat1, const SR_Mat* mat2);
+
+// Saving
 SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const char* const path);
 
 // Implementation
 
 #ifdef SR_IMPLEMENTATION
 
-SRENDERDEF uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b) { return a > b ? a : b; }
-SRENDERDEF uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b) { return a < b ? a : b; }
+static inline uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b) { return a > b ? a : b; }
+static inline uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b) { return a < b ? a : b; }
 
 SRENDERDEF void sr_canvas_init(
     SR_Canvas* const canvas, 
@@ -322,31 +346,19 @@ SRENDERDEF void sr_canvas_draw_line(
     }
 }
 
-/**
- * todo
- * > graphics pipeline
- *    a. ebo, vbo
- *    b. camera
- */
+#ifndef _SR_MATRIX_ARENA_INITIAL_CAP
+    #define _SR_MATRIX_ARENA_INITIAL_CAP 4096
+#endif
 
-#define _SR_MATRIX_ARENA_INITIAL_CAP 4096
-
+// todo: make a page system to avoid erasing all previous allocs
 struct {
     float* data;
     float* top;
     size_t cap;
 } _SR_Matrix_Arena = {0};
 
-typedef struct {
-    float*  data;
-    uint32_t rows;
-    uint32_t cols;
-} SR_Mat;
-
 #define SR_MAT_INDEX(mat, i, j) ((mat)->data[(i)*(mat)->cols+(j)])
 #define SR_VEC_INDEX(mat, j)    SR_MAT_INDEX(mat, 0, j);
-
-#define SR_Vec SR_Mat
 
 void _SR_Arena_Init() __attribute__((constructor));
 void _SR_Arena_Init() {
@@ -378,15 +390,28 @@ SRENDERDEF void sr_matrix_alloc(SR_Mat* const mat, const uint32_t rows, const ui
     _SR_Matrix_Arena.top += required;
 }
 
-static inline void sr_vector_alloc(SR_Mat* const mat, const uint32_t cols) {
-    sr_matrix_alloc(mat, 1, cols);
+SRENDERDEF void sr_matrix_arena_reset() {
+    _SR_Matrix_Arena.top  = _SR_Matrix_Arena.data;
+}
+
+SRENDERDEF SR_Mat sr_matrix_make(float* const data, const uint32_t rows, const uint32_t cols) {
+    return (SR_Mat){
+        .data = data,
+        .rows = rows,
+        .cols = cols
+    };
+}
+
+
+SRENDERDEF void sr_matrix_copy(SR_Mat* const dst, const SR_Mat* const src) {
+    sr_matrix_alloc(dst, src->rows, src->cols);
+    memcpy(dst->data, src->data, src->rows * src->cols * sizeof(float));
 }
 
 SRENDERDEF void sr_matrix_mult(SR_Mat* const src, const SR_Mat* const mat1, const SR_Mat* const mat2) {
     #ifdef SR_ASSERT_MAT_MULT
     assert(mat1->cols == mat2->rows && "matrix size mismatch");
     #endif
-    sr_matrix_alloc(src, mat1->rows, mat2->cols);
     for (uint32_t i = 0; i < mat1->rows; i++) {
         for (uint32_t j = 0; j < mat2->cols; j++) {
             float acc = 0;
@@ -458,8 +483,10 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define Mat SR_Mat
     #define Vec SR_Vec
     #define matrix_alloc sr_matrix_alloc
-    #define vector_alloc sr_vector_alloc
+    #define matrix_arena_reset sr_matrix_arena_reset
+    #define matrix_make sr_matrix_make
     #define matrix_mult sr_matrix_mult
+    #define matrix_copy sr_matrix_copy
     #define MAT_INDEX SR_MAT_INDEX
     #define VEC_INDEX SR_VEC_INDEX
     #define UNUSED SR_UNUSED
