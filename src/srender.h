@@ -47,7 +47,7 @@
 
 // Miscellaneous
 
-#define SR_UN_used(var) (void)var
+#define SR_UNUSED(var) (void)var
 
 typedef uint8_t SR_Bool;
 #define SR_TRUE  1
@@ -373,12 +373,12 @@ struct {
     }                                                               \
 \
 static inline _T* _m_alloc(_s_name* const arena, size_t count) {    \
-    const size_t _used = (size_t)(arena->cursor - arena->data);     \
-    const size_t _needed = _used + count;                           \
+    const size_t used = (size_t)(arena->cursor - arena->data);      \
+    const size_t needed = used + count;                             \
                                                                     \
-    if (_needed > arena->capacity) {                                \
+    if (needed > arena->capacity) {                                 \
         size_t new_cap = arena->capacity * 2;                       \
-        while (new_cap < _needed)                                   \
+        while (new_cap < needed)                                    \
             new_cap *= 2;                                           \
                                                                     \
         _T* new_data = (_T*) _allocator(new_cap * sizeof(_T));      \
@@ -386,11 +386,11 @@ static inline _T* _m_alloc(_s_name* const arena, size_t count) {    \
             fprintf(stderr, "fatal: out of memory");                \
             exit(EXIT_FAILURE);                                     \
         }                                                           \
-        memcpy(new_data, arena->data, _used * sizeof(_T));          \
+        memcpy(new_data, arena->data, used * sizeof(_T));           \
         free(arena->data);                                          \
                                                                     \
         arena->data     = new_data;                                 \
-        arena->cursor   = new_data + _used;                         \
+        arena->cursor   = new_data + used;                          \
         arena->capacity = new_cap;                                  \
     }                                                               \
                                                                     \
@@ -404,11 +404,11 @@ static inline _T* _m_alloc(_s_name* const arena, size_t count) {    \
     }
 // SR_DEFINE_ARENA
 
-SR_ARENA_DEFINITION(float, 4096, SR_Matrix_Arena, SR_Global_Arena_Init, SR_Global_Arena_alloc, SR_Global_Arena_reset, malloc)
+SR_ARENA_DEFINITION(float, 64, SR_Matrix_Arena, SR_Global_Arena_Init, SR_Global_Arena_alloc, SR_Global_Arena_reset, malloc)
 SR_Matrix_Arena _SR_Global_Matrix_Arena = {0};
 
-void _SR_Arena_Init() __attribute__((constructor));
-void _SR_Arena_Init() {
+void _sr_Arena_Init() __attribute__((constructor));
+void _sr_Arena_Init() {
     SR_Global_Arena_Init(&_SR_Global_Matrix_Arena);
 }
 
@@ -516,7 +516,7 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define matrix_mult sr_matrix_mult
     #define matrix_copy sr_matrix_copy
     #define MAT_INDEX SR_MAT_INDEX
-    #define UN_used SR_UN_used
+    #define UNUSED SR_UNUSED
     #define Bool SR_Bool
     #define TRUE SR_TRUE
     #define FALSE SR_FALSE

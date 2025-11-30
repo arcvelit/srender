@@ -58,3 +58,4 @@ dkms.conf
 *.ppm
 .vscode/
 Makefile
+bin/
