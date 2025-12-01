@@ -8,12 +8,6 @@
 
 int main(void) {
     
-    Canvas canvas = {0};
-    uint32_t* const frame = frame_alloc(FRAME_WIDTH, FRAME_HEIGHT);
-    canvas_init(&canvas, frame, FRAME_WIDTH, FRAME_HEIGHT, FRAME_WIDTH);
-
-    canvas_fill(&canvas, COLOR_BLACK);
-
     float _a[2][2] = {0};
     Mat A = matrix_make((float*)&_a, 2, 2);
     for (size_t i = 0; i < A.rows*A.cols; i++) A.data[i] = i+1;
@@ -33,13 +27,9 @@ int main(void) {
     /* Possible to allocate on the global arena like this
      *  Mat result = {0};
      *  matrix_alloc(&result, 2, 1); 
-     *  matrix_mult(&result, &A, &B);
+     *  matrix_mult(&Global_Arena, &result, &A, &B);
      *  ...
      */
-
-    canvas_save_as_ppm(&canvas, "out.ppm");
-
-    frame_free(frame);
 
     return 0;
 }

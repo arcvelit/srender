@@ -89,7 +89,7 @@ typedef uint32_t SR_Color;
 
 #define SR_MEMORY_GUARD(ptr) while (0) {         \
     if (!(ptr)) {                                \
-        fprintf(stderr, "fatal: out of memory"); \
+        fprintf(stderr, "fatal: out of memory\n"); \
         exit(EXIT_FAILURE);                      \
     }                                            \
 }
@@ -110,6 +110,29 @@ typedef struct {
 
 #define SR_MAT_INDEX(mat, i, j) ((mat)->data[(i)*(mat)->cols+(j)])
 
+#ifndef SR_GLOBAL_ARENA_PAGE_CAP
+    #define SR_GLOBAL_ARENA_PAGE_CAP 1024
+#endif // SR_GLOBAL_ARENA_PAGE_CAP
+
+#ifndef SR_ARENA_ALLOCATOR 
+    #define SR_ARENA_ALLOCATOR malloc
+#endif // SR_ARENA_ALLOCATOR
+
+typedef struct SR_Arena_Page SR_Arena_Page;
+struct SR_Arena_Page {
+    uint8_t data[SR_GLOBAL_ARENA_PAGE_CAP];
+    SR_Arena_Page*  next;
+};
+
+typedef struct {
+    SR_Arena_Page*  head;
+    SR_Arena_Page*  current;
+    uint8_t*        cursor;
+    size_t          page_cap;
+} SR_Arena;
+
+SR_Arena SR_Global_Arena;
+
 // Function declarations
 static inline uint32_t SR_MAX_U32(const uint32_t a, const uint32_t b);
 static inline uint32_t SR_MIN_U32(const uint32_t a, const uint32_t b);
@@ -129,10 +152,9 @@ SRENDERDEF void sr_canvas_outline_poly(SR_Canvas* const canvas, const uint32_t* 
 SRENDERDEF void sr_canvas_draw_line(SR_Canvas* const canvas, const uint32_t x0, const uint32_t y0, const uint32_t x1, const uint32_t y1, const uint32_t color);
 
 // Linear algebra
-SRENDERDEF void sr_matrix_alloc(SR_Mat* mat, uint32_t rows, uint32_t cols);
+SRENDERDEF void sr_matrix_alloc(SR_Arena* const arena, SR_Mat* mat, uint32_t rows, uint32_t cols);
 SRENDERDEF SR_Mat sr_matrix_make(float* const data, const uint32_t rows, const uint32_t cols);
 SRENDERDEF void sr_matrix_copy(SR_Mat* dst, const SR_Mat* src);
-SRENDERDEF void sr_matrix_arena_reset(void);
 
 /* todo: see if adding vector directives can make it more intuitive
  *  #define sr_vector_alloc(mat, cols)  sr_matrix_alloc(mat, 1, cols)
@@ -141,6 +163,13 @@ SRENDERDEF void sr_matrix_arena_reset(void);
  */
 
 SRENDERDEF void sr_matrix_mult(SR_Mat* src, const SR_Mat* mat1, const SR_Mat* mat2);
+
+// Arena
+SRENDERDEF void sr_arena_init(SR_Arena* const arena, const size_t page_cap);
+SRENDERDEF uint8_t* sr_arena_alloc(SR_Arena* const arena, size_t count);
+SRENDERDEF void sr_arena_reset(SR_Arena* const arena);
+
+SRENDERDEF void SR_Global_Arena_reset(void);
 
 // Saving
 SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const char* const path);
@@ -348,79 +377,58 @@ SRENDERDEF void sr_canvas_draw_line(
     }
 }
 
-#ifndef _SR_MATRIX_ARENA_INITIAL_CAP
-    #define _SR_MATRIX_ARENA_INITIAL_CAP 4096
-#endif
-
-// todo: make a page system to avoid erasing all previous allocs
-struct {
-    float* data;
-    float* top;
-    size_t cap;
-} _SR_Matrix_Arena = {0};
-
-#define SR_ARENA_DEFINITION(_T, _cap, _s_name, _m_init, _m_alloc, _m_reset, _allocator)   \
-    typedef struct {                                                \
-        _T*    data;                                                \
-        _T*    cursor;                                              \
-        size_t capacity;                                            \
-    } _s_name;                                                      \
-\
-    static inline void _m_init(_s_name* const arena) {              \
-        arena->data     = (_T*) _allocator(_cap * sizeof(_T));      \
-        arena->cursor   = arena->data;                              \
-        arena->capacity = _cap;                                     \
-    }                                                               \
-\
-static inline _T* _m_alloc(_s_name* const arena, size_t count) {    \
-    const size_t used = (size_t)(arena->cursor - arena->data);      \
-    const size_t needed = used + count;                             \
-                                                                    \
-    if (needed > arena->capacity) {                                 \
-        size_t new_cap = arena->capacity * 2;                       \
-        while (new_cap < needed)                                    \
-            new_cap *= 2;                                           \
-                                                                    \
-        _T* new_data = (_T*) _allocator(new_cap * sizeof(_T));      \
-        if (!new_data) {                                            \
-            fprintf(stderr, "fatal: out of memory");                \
-            exit(EXIT_FAILURE);                                     \
-        }                                                           \
-        memcpy(new_data, arena->data, used * sizeof(_T));           \
-        free(arena->data);                                          \
-                                                                    \
-        arena->data     = new_data;                                 \
-        arena->cursor   = new_data + used;                          \
-        arena->capacity = new_cap;                                  \
-    }                                                               \
-                                                                    \
-    _T* ptr = arena->cursor;                                        \
-    arena->cursor += count;                                         \
-    return ptr;                                                     \
-}                                                                   \
-\
-    static inline void _m_reset(_s_name* const arena) { \
-        arena->cursor = arena->data;                    \
-    }
-// SR_DEFINE_ARENA
-
-SR_ARENA_DEFINITION(float, 64, SR_Matrix_Arena, SR_Global_Arena_Init, SR_Global_Arena_alloc, SR_Global_Arena_reset, malloc)
-SR_Matrix_Arena _SR_Global_Matrix_Arena = {0};
-
-void _sr_Arena_Init() __attribute__((constructor));
-void _sr_Arena_Init() {
-    SR_Global_Arena_Init(&_SR_Global_Matrix_Arena);
+SRENDERDEF void sr_arena_init(SR_Arena* const arena, const size_t page_cap) {
+    arena->head       = (SR_Arena_Page*)SR_ARENA_ALLOCATOR(sizeof(SR_Arena_Page));
+    arena->head->next = 0;
+    arena->current    = arena->head;
+    arena->cursor     = &arena->head->data[0];
+    arena->page_cap   = page_cap;
 }
 
-SRENDERDEF void sr_matrix_alloc(SR_Mat* const mat, const uint32_t rows, const uint32_t cols) {
-    const size_t required  = rows * cols;
-    mat->data = SR_Global_Arena_alloc(&_SR_Global_Matrix_Arena, required);
+SRENDERDEF uint8_t* sr_arena_alloc(SR_Arena* const arena, size_t count) {
+    const size_t page_size = arena->cursor - arena->current->data;
+    if (page_size + count > arena->page_cap) {
+        if (count > arena->page_cap) {
+            fprintf(stderr, "error: arena page capacity is too small\n");
+            return 0;
+        }
+        SR_Arena_Page* next_page = arena->current->next;
+        if (!next_page) {
+            next_page = (SR_Arena_Page*)SR_ARENA_ALLOCATOR(sizeof(SR_Arena_Page));
+            if (!next_page) {
+                fprintf(stderr, "error: failed to allocate arena page\n");
+                return 0;
+            }
+            next_page->next = 0;
+            arena->current->next = next_page;
+        }
+        arena->current       = next_page;
+        arena->cursor        = &next_page->data[0];
+    }
+    uint8_t* const alloc_cursor = arena->cursor;
+    arena->cursor = alloc_cursor + count;
+    return alloc_cursor;
+}
+
+SRENDERDEF void sr_arena_reset(SR_Arena* const arena) {
+    arena->current =  arena->head;
+    arena->cursor  = &arena->head->data[0];
+}
+
+void SR_Global_Arena_Init() __attribute__((constructor));
+void SR_Global_Arena_Init() {
+    sr_arena_init(&SR_Global_Arena, SR_GLOBAL_ARENA_PAGE_CAP);
+}
+
+SRENDERDEF void sr_matrix_alloc(SR_Arena* const arena, SR_Mat* const mat, const uint32_t rows, const uint32_t cols) {
+    const size_t required  = rows * cols * sizeof(float);
+    mat->data = (float*)sr_arena_alloc(arena, required);
     mat->cols = cols;
     mat->rows = rows;
 }
 
-SRENDERDEF void sr_matrix_arena_reset() {
-    SR_Global_Arena_reset(&_SR_Global_Matrix_Arena);
+SRENDERDEF void SR_Global_Arena_reset() {
+    sr_arena_reset(&SR_Global_Arena);
 }
 
 SRENDERDEF SR_Mat sr_matrix_make(float* const data, const uint32_t rows, const uint32_t cols) {
@@ -432,7 +440,6 @@ SRENDERDEF SR_Mat sr_matrix_make(float* const data, const uint32_t rows, const u
 }
 
 SRENDERDEF void sr_matrix_copy(SR_Mat* const dst, const SR_Mat* const src) {
-    sr_matrix_alloc(dst, src->rows, src->cols);
     memcpy(dst->data, src->data, src->rows * src->cols * sizeof(float));
 }
 
@@ -486,17 +493,19 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define COLOR_MAGENTA SR_COLOR_MAGENTA
     #define COLOR_BLACK SR_COLOR_BLACK
     #define COLOR_WHITE SR_COLOR_WHITE
+
     #define Canvas SR_Canvas
+    #define AT_POS SR_AT_POS
     #define GET_R SR_GET_R
     #define GET_G SR_GET_G
     #define GET_B SR_GET_B
     #define GET_A SR_GET_A
     #define RGBA SR_RGBA
-    #define AT_POS SR_AT_POS
     #define CANVAS_PUT SR_CANVAS_PUT
-    #define MEMORY_GUARD SR_MEMORY_GUARD
+    
     #define MIN_U32 SR_MIN_U32
     #define MAX_U32 SR_MAX_U32
+    
     #define canvas_init sr_canvas_init
     #define canvas_view sr_canvas_view
     #define color_blend sr_color_blend
@@ -506,20 +515,36 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define canvas_outline_poly sr_canvas_outline_poly
     #define canvas_draw_line sr_canvas_draw_line
     #define canvas_save_as_ppm sr_canvas_save_as_ppm
+
     #define frame_alloc sr_frame_alloc
     #define frame_free sr_frame_free
+
     #define Mat SR_Mat
     #define Vec SR_Vec
     #define matrix_alloc sr_matrix_alloc
-    #define matrix_arena_reset sr_matrix_arena_reset
+    #define global_matrix_arena_reset SR_Global_Arena_reset
     #define matrix_make sr_matrix_make
     #define matrix_mult sr_matrix_mult
     #define matrix_copy sr_matrix_copy
     #define MAT_INDEX SR_MAT_INDEX
+    
     #define UNUSED SR_UNUSED
+    #define MEMORY_GUARD SR_MEMORY_GUARD
+    
     #define Bool SR_Bool
     #define TRUE SR_TRUE
     #define FALSE SR_FALSE
+
+    #define Arena SR_Arena
+    #define Arena_Page SR_Arena_Page
+    #define arena_init sr_arena_init
+    #define arena_alloc sr_arena_alloc
+    #define arena_reset sr_arena_reset
+    #define Global_Arena SR_Global_Arena
+
+    #define ARENA_PAGE_CAP SR_GLOBAL_ARENA_PAGE_CAP
+    #define ARENA_ALLOCATOR SR_ARENA_ALLOCATOR
+
 #endif // SR_STRIP_PREFIX
 
 #endif // SRENDER_C
