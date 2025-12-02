@@ -118,6 +118,10 @@ typedef struct {
     #define SR_ARENA_ALLOCATOR malloc
 #endif // SR_ARENA_ALLOCATOR
 
+#ifndef SR_ARENA_DEALLOCATOR 
+    #define SR_ARENA_DEALLOCATOR free
+#endif // SR_ARENA_DEALLOCATOR
+
 typedef struct SR_Arena_Page SR_Arena_Page;
 struct SR_Arena_Page {
     uint8_t data[SR_GLOBAL_ARENA_PAGE_CAP];
@@ -168,6 +172,8 @@ SRENDERDEF void sr_matrix_mult(SR_Mat* src, const SR_Mat* mat1, const SR_Mat* ma
 SRENDERDEF void sr_arena_init(SR_Arena* const arena, const size_t page_cap);
 SRENDERDEF uint8_t* sr_arena_alloc(SR_Arena* const arena, size_t count);
 SRENDERDEF void sr_arena_reset(SR_Arena* const arena);
+SRENDERDEF void sr_arena_deinit(SR_Arena* const arena);
+SRENDERDEF size_t sr_arena_page_count(const SR_Arena* const arena);
 
 SRENDERDEF void SR_Global_Arena_reset(void);
 
@@ -378,6 +384,7 @@ SRENDERDEF void sr_canvas_draw_line(
 }
 
 SRENDERDEF void sr_arena_init(SR_Arena* const arena, const size_t page_cap) {
+    if (!arena) return;
     arena->head       = (SR_Arena_Page*)SR_ARENA_ALLOCATOR(sizeof(SR_Arena_Page));
     arena->head->next = 0;
     arena->current    = arena->head;
@@ -386,6 +393,7 @@ SRENDERDEF void sr_arena_init(SR_Arena* const arena, const size_t page_cap) {
 }
 
 SRENDERDEF uint8_t* sr_arena_alloc(SR_Arena* const arena, size_t count) {
+    if (!arena) return 0;
     const size_t page_size = arena->cursor - arena->current->data;
     if (page_size + count > arena->page_cap) {
         if (count > arena->page_cap) {
@@ -411,8 +419,31 @@ SRENDERDEF uint8_t* sr_arena_alloc(SR_Arena* const arena, size_t count) {
 }
 
 SRENDERDEF void sr_arena_reset(SR_Arena* const arena) {
+    if (!arena) return;
     arena->current =  arena->head;
     arena->cursor  = &arena->head->data[0];
+}
+
+SRENDERDEF void sr_arena_deinit(SR_Arena* const arena) {
+    if (!arena) return;
+    SR_Arena_Page* page = arena->head;
+    while (page) {
+        SR_Arena_Page* next = page->next;
+        SR_ARENA_DEALLOCATOR(page);
+        page = next;
+    }
+    arena->head    = 0;
+    arena->cursor  = 0;
+    arena->current = 0;
+}
+
+SRENDERDEF size_t sr_arena_page_count(const SR_Arena* const arena) {
+    if (!arena) return 0;
+    size_t count = 0;
+    for (SR_Arena_Page* p = arena->head; p; p = p->next) {
+        count++;
+    }
+    return count;
 }
 
 void SR_Global_Arena_Init() __attribute__((constructor));
@@ -540,10 +571,13 @@ SRENDERDEF SR_Bool sr_canvas_save_as_ppm(const SR_Canvas* const canvas, const ch
     #define arena_init sr_arena_init
     #define arena_alloc sr_arena_alloc
     #define arena_reset sr_arena_reset
+    #define arena_page_count sr_arena_page_count
+    #define arena_deinit sr_arena_deinit
     #define Global_Arena SR_Global_Arena
 
     #define ARENA_PAGE_CAP SR_GLOBAL_ARENA_PAGE_CAP
     #define ARENA_ALLOCATOR SR_ARENA_ALLOCATOR
+    #define ARENA_DEALLOCATOR SR_ARENA_DEALLOCATOR
 
 #endif // SR_STRIP_PREFIX
 
