@@ -24,5 +24,6 @@ int main(void) {
     
     printf("B =\n%.2f  %.2f\n%.2f  %.2f\n", B.data[0], B.data[1], B.data[2], B.data[3]);
 
+    arena_deinit(&mat_arena);
     return 0;
 }
